@@ -62,6 +62,18 @@ brew install bitcoin
 
 ## DB Migrations
 
+For local/regtest fixtures, run the operator with `-local=true`. Before database
+hooks, chain watchers, or startup tasks run, it creates the main schema and the
+ephemeral schema when `-ephemeral-database` is configured. Creation is additive
+and safe to repeat on restart; any schema error aborts startup. The databases
+themselves must already exist. Non-local deployments still require the versioned
+migrations below.
+
+Use `-listen-address 127.0.0.1` to bind the operator's HTTP, native gRPC, internal
+gRPC, and SSP gRPC listeners to loopback. The value is a host or IP without a
+port (IPv6, such as `::1`, is supported); the existing port flags select the
+ports. Omitting this option preserves the default of binding all interfaces.
+
 We use atlas to manage our database migrations. Install via `mise install`.
 
 To make a migration, follow these steps:
