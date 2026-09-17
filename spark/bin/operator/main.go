@@ -89,6 +89,7 @@ type args struct {
 	OperatorsFilePath          string
 	Threshold                  uint64
 	SignerAddress              string
+	ListenAddress              string
 	Port                       uint64
 	HttpPort                   uint64
 	GrpcPort                   uint64
@@ -155,6 +156,7 @@ func loadArgs() (*args, error) {
 	flag.StringVar(&args.OperatorsFilePath, "operators", "", "Path to operators file")
 	flag.Uint64Var(&args.Threshold, "threshold", 0, "Threshold value")
 	flag.StringVar(&args.SignerAddress, "signer", "", "Signer address")
+	flag.StringVar(&args.ListenAddress, "listen-address", "", "Bind host or IP for HTTP and all gRPC listeners (default: all interfaces)")
 	flag.Uint64Var(&args.Port, "port", 0, "DEPRECATED: Use --http-port instead. HTTP port (grpc-web + metrics)")
 	flag.Uint64Var(&args.HttpPort, "http-port", 0, "HTTP port (grpc-web + metrics)")
 	flag.Uint64Var(&args.GrpcPort, "grpc-port", 0, "Native gRPC port (if 0 or same as http-port, uses ServeHTTP multiplexing)")
@@ -545,6 +547,12 @@ func main() {
 		if ephemeralEnabled {
 			ephemeralDbClient = entephemeral.NewClient(entephemeral.Driver(ephemeralDialectDriver))
 		}
+	}
+
+	// Local fixtures can start with empty databases. Initialize both schemas
+	// before installing database hooks or starting any database consumers.
+	if err := initializeLocalSchemas(errCtx, args.RunningLocally, dbDriver, dbClient, ephemeralDbClient); err != nil {
+		logger.Fatal("Failed to initialize local database schemas", zap.Error(err))
 	}
 
 	// Add interceptor for query stats and read operation metrics
@@ -1072,7 +1080,7 @@ func main() {
 			zap.Uint64("http_port", args.HttpPort))
 
 		var err error
-		grpcListener, err = net.Listen("tcp", fmt.Sprintf(":%d", args.GrpcPort))
+		grpcListener, err = net.Listen("tcp", args.listenAddr(args.GrpcPort))
 		if err != nil {
 			logger.Fatal("Failed to create gRPC listener", zap.Error(err))
 		}
@@ -1159,7 +1167,7 @@ func main() {
 	}
 
 	server := &http.Server{
-		Addr:      fmt.Sprintf(":%d", args.HttpPort),
+		Addr:      args.listenAddr(args.HttpPort),
 		Handler:   mux,
 		TLSConfig: &tlsConfig,
 		// Prevent a slowloris attack where a peer opens a connection and dribbles headers to pin server resources.
@@ -1181,7 +1189,7 @@ func main() {
 	})
 
 	if internalGrpcServer != nil {
-		internalListener, err := net.Listen("tcp", fmt.Sprintf(":%d", args.InternalGrpcPort))
+		internalListener, err := net.Listen("tcp", args.listenAddr(args.InternalGrpcPort))
 		if err != nil {
 			logger.Fatal("Failed to create internal gRPC listener", zap.Error(err))
 		}
@@ -1195,7 +1203,7 @@ func main() {
 		})
 	}
 	if sspGrpcServer != nil {
-		sspListener, err := net.Listen("tcp", fmt.Sprintf(":%d", args.SSPGrpcPort))
+		sspListener, err := net.Listen("tcp", args.listenAddr(args.SSPGrpcPort))
 		if err != nil {
 			logger.Fatal("Failed to create SSP gRPC listener", zap.Error(err))
 		}
