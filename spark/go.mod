@@ -3,6 +3,7 @@ module github.com/lightsparkdev/spark
 go 1.27.0
 
 require (
+	ariga.io/atlas v0.32.1-0.20250325101103-175b25e1c1b9
 	entgo.io/ent v0.14.3
 	github.com/DataDog/zstd v1.5.7
 	github.com/Khan/genqlient v0.8.1
@@ -67,7 +68,6 @@ require (
 )
 
 require (
-	ariga.io/atlas v0.32.1-0.20250325101103-175b25e1c1b9 // indirect
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
