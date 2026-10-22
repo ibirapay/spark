@@ -70,13 +70,19 @@ func init() {
 	}
 }
 
-type bitcoinClient interface {
+// rawTxSender is all a single-transaction broadcast needs, so callers outside
+// the watchtower can pass a narrower client.
+type rawTxSender interface {
 	SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error)
+}
+
+type bitcoinClient interface {
+	rawTxSender
 	RawRequest(method string, params []json.RawMessage) (json.RawMessage, error)
 }
 
 // BroadcastTransaction broadcasts a transaction to the network
-func BroadcastTransaction(ctx context.Context, btcClient bitcoinClient, nodeID uuid.UUID, txBytes []byte) error {
+func BroadcastTransaction(ctx context.Context, btcClient rawTxSender, nodeID uuid.UUID, txBytes []byte) error {
 	logger := logging.GetLoggerFromContext(ctx)
 
 	tx, err := common.TxFromRawTxBytes(txBytes)
@@ -506,7 +512,7 @@ func checkAndBroadcastRefundTx(ctx context.Context, bitcoinClient bitcoinClient,
 
 func broadcastWithMetric(
 	ctx context.Context,
-	btcClient bitcoinClient,
+	btcClient rawTxSender,
 	nodeID uuid.UUID,
 	txBytes []byte,
 	network btcnetwork.Network,
