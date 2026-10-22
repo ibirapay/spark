@@ -2,6 +2,7 @@ package watchtower
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -152,14 +153,31 @@ func TestBroadcastTransaction_EmptyTransaction(t *testing.T) {
 
 // mockBitcoinClient is a mock implementation of BitcoinClientInterface for testing.
 type mockBitcoinClient struct {
-	err      error
-	response *chainhash.Hash
-	seenTX   *wire.MsgTx
+	err          error
+	response     *chainhash.Hash
+	seenTX       *wire.MsgTx
+	rawResponses map[string]json.RawMessage
+	rawRequests  []rawRequest
 }
 
 func (m *mockBitcoinClient) SendRawTransaction(tx *wire.MsgTx, _ bool) (*chainhash.Hash, error) {
 	m.seenTX = tx
 	return m.response, m.err
+}
+
+func (m *mockBitcoinClient) RawRequest(method string, params []json.RawMessage) (json.RawMessage, error) {
+	m.rawRequests = append(m.rawRequests, rawRequest{method, params})
+	if m.rawResponses != nil {
+		if res, ok := m.rawResponses[method]; ok {
+			return res, nil
+		}
+	}
+	return nil, fmt.Errorf("unexpected %s", method)
+}
+
+type rawRequest struct {
+	method string
+	params []json.RawMessage
 }
 
 func createTestTransaction(t *testing.T) ([]byte, *wire.MsgTx) {

@@ -8131,6 +8131,7 @@ type TreeNodeExample struct {
 	DirectRefundTx           *[]byte
 	RawRefundTxid            *schematype.TxID
 	DirectRefundTxid         *schematype.TxID
+	RawRefundLadder          *[]byte
 
 	// Edges - if set, use the provided entity; if nil, create a default one
 	Tree            *ent.Tree
@@ -8258,6 +8259,12 @@ func (tn *TreeNodeExample) SetRawRefundTxid(v schematype.TxID) *TreeNodeExample 
 // SetDirectRefundTxid sets the direct_refund_txid field.
 func (tn *TreeNodeExample) SetDirectRefundTxid(v schematype.TxID) *TreeNodeExample {
 	tn.DirectRefundTxid = &v
+	return tn
+}
+
+// SetRawRefundLadder sets the raw_refund_ladder field.
+func (tn *TreeNodeExample) SetRawRefundLadder(v []byte) *TreeNodeExample {
+	tn.RawRefundLadder = &v
 	return tn
 }
 
@@ -8421,6 +8428,10 @@ func (tn *TreeNodeExample) MustExec(ctx context.Context) *ent.TreeNode {
 	} else {
 		// Use default from annotation
 		create.SetDirectRefundTxid(schematype.MustParseTxID("7c9cb91704f52a0959125cf87438043c6e55536da0359ef476173f9f33b8af15"))
+	}
+	if tn.RawRefundLadder != nil {
+		create.SetRawRefundLadder(*tn.RawRefundLadder)
+	} else {
 	}
 
 	// Handle edges
@@ -8586,6 +8597,10 @@ func (tn *TreeNodeExample) Exec(ctx context.Context) (*ent.TreeNode, error) {
 	} else {
 		// Use default from annotation
 		create.SetDirectRefundTxid(schematype.MustParseTxID("7c9cb91704f52a0959125cf87438043c6e55536da0359ef476173f9f33b8af15"))
+	}
+	if tn.RawRefundLadder != nil {
+		create.SetRawRefundLadder(*tn.RawRefundLadder)
+	} else {
 	}
 
 	// Handle edges

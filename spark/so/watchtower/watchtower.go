@@ -2,6 +2,7 @@ package watchtower
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -71,6 +72,7 @@ func init() {
 
 type bitcoinClient interface {
 	SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error)
+	RawRequest(method string, params []json.RawMessage) (json.RawMessage, error)
 }
 
 // BroadcastTransaction broadcasts a transaction to the network
@@ -423,6 +425,16 @@ func checkAndBroadcastRefundTx(ctx context.Context, bitcoinClient bitcoinClient,
 	}
 
 	logger := logging.GetLoggerFromContext(ctx)
+
+	// The CPFP refund's timelock runs out DirectTimelockOffset blocks before the
+	// direct refunds', and a fee ladder lets it pay a market fee.
+	sent, err := tryBroadcastRefundLadder(ctx, bitcoinClient, node, blockHeight, network)
+	if sent {
+		return nil
+	}
+	if err != nil {
+		logger.With(zap.Error(err)).Sugar().Infof("Refund ladder not broadcast for node %s, trying the direct refunds", node.ID)
+	}
 
 	candidates := [][]byte{node.DirectRefundTx, node.DirectFromCpfpRefundTx}
 

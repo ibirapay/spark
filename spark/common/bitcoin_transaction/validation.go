@@ -24,6 +24,10 @@ const (
 	TxTypeRefundDirectFromCPFP
 	TxTypeNodeCPFP
 	TxTypeNodeDirect
+	// TxTypeRefundCPFPAnchorless is a CPFP refund without the ephemeral anchor,
+	// which the SO accepts only together with a valid refund fee ladder
+	// (SP-4089): the ladder's rungs are its fee-paying children.
+	TxTypeRefundCPFPAnchorless
 )
 
 // VerifyTransactionWithDatabase validates a Bitcoin transaction by reconstructing it based on node in the database
@@ -44,7 +48,7 @@ func VerifyTransactionWithDatabaseTimelock(ctx context.Context, clientRawTxBytes
 
 	switch txType {
 	// valid types
-	case TxTypeRefundCPFP:
+	case TxTypeRefundCPFP, TxTypeRefundCPFPAnchorless:
 		sourceRawTxBytes = dbLeaf.RawTx
 	case TxTypeRefundDirect:
 		sourceRawTxBytes = dbLeaf.DirectTx
@@ -127,6 +131,13 @@ func ConstructExpectedTransaction(sourceRawTxBytes []byte, vout uint32, cpfpRefu
 	switch txType {
 	case TxTypeRefundCPFP, TxTypeNodeCPFP:
 		return constructCPFPRefundTransaction(sourceTx, vout, refundDestPubkey, serverSequence, txVersion)
+	case TxTypeRefundCPFPAnchorless:
+		tx, err := constructCPFPRefundTransaction(sourceTx, vout, refundDestPubkey, serverSequence, txVersion)
+		if err != nil {
+			return nil, err
+		}
+		tx.TxOut = tx.TxOut[:1]
+		return tx, nil
 	case TxTypeRefundDirect, TxTypeNodeDirect:
 		return constructDirectRefundTransaction(sourceTx, vout, refundDestPubkey, serverSequence, txVersion)
 	case TxTypeRefundDirectFromCPFP:
@@ -299,7 +310,7 @@ func ValidateSequence(cpfpTimelock uint32, txType TxType, clientSequence uint32)
 	switch txType {
 	case TxTypeRefundDirect, TxTypeRefundDirectFromCPFP, TxTypeNodeDirect:
 		expectedTimelock = expectedCPFPTimelock + spark.DirectTimelockOffset
-	case TxTypeRefundCPFP, TxTypeNodeCPFP:
+	case TxTypeRefundCPFP, TxTypeNodeCPFP, TxTypeRefundCPFPAnchorless:
 		expectedTimelock = expectedCPFPTimelock
 	default:
 		return 0, fmt.Errorf("unknown transaction type: %d", txType)

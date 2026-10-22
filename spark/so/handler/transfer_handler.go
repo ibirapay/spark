@@ -3590,7 +3590,12 @@ func validateReceivedRefundTransactions(ctx context.Context, job *pb.LeafRefundT
 		return sparkerrors.InvalidArgumentMalformedField(fmt.Errorf("refund signing public key %x does not match expected owner signing pubkey %x for leaf %s", refundDestPubKey.Serialize(), expected.Serialize(), job.GetLeafId()))
 	}
 
-	if err := validateSingleLeafRefundTxs(
+	ladder := job.GetRefundLadder()
+	cpfpTxType := bitcointransaction.TxTypeRefundCPFP
+	if ladder != nil {
+		cpfpTxType = bitcointransaction.TxTypeRefundCPFPAnchorless
+	}
+	if err := validateSingleLeafRefundTxsOfType(
 		ctx,
 		leaf,
 		getRawTx(job.GetRefundTxSigningJob()),
@@ -3599,8 +3604,23 @@ func validateReceivedRefundTransactions(ctx context.Context, job *pb.LeafRefundT
 		refundDestPubKey,
 		transferType,
 		refundTimelockAnchorTx,
+		cpfpTxType,
 	); err != nil {
 		return fmt.Errorf("refund transaction validation failed for leaf %s: %w", job.GetLeafId(), err)
+	}
+
+	if ladder != nil {
+		refundTx, err := common.TxFromRawTxBytes(getRawTx(job.GetRefundTxSigningJob()))
+		if err != nil {
+			return sparkerrors.InvalidArgumentMalformedField(fmt.Errorf("failed to parse cpfp refund tx for leaf %s: %w", job.GetLeafId(), err))
+		}
+		rungs := make([][]byte, len(ladder.GetRungs()))
+		for i, rung := range ladder.GetRungs() {
+			rungs[i] = rung.GetSignedTx()
+		}
+		if err := bitcointransaction.ValidateRefundLadder(refundTx, ladder.GetRungTableVersion(), rungs); err != nil {
+			return sparkerrors.InvalidArgumentMalformedField(fmt.Errorf("invalid refund fee ladder for leaf %s: %w", job.GetLeafId(), err))
+		}
 	}
 
 	return nil
@@ -3774,6 +3794,7 @@ func (h *TransferHandler) prepareClaimRefundSigningJobs(
 				RawTx:            job.GetRawTx(),
 				SigningPublicKey: job.GetSigningPublicKey(),
 			},
+			RefundLadder: job.GetRefundLadder(),
 		}
 		// Direct refund is only required when the leaf has a DirectTx and is not a zero-timelock node.
 		if directJob, ok := directUserRefundMap[job.GetLeafId()]; ok {
@@ -3823,6 +3844,15 @@ func (h *TransferHandler) prepareClaimRefundSigningJobs(
 		updateOp := leaf.Update().
 			SetRawRefundTx(job.GetRawTx()).
 			SetRawRefundTxid(rawRefundTxid)
+		if ladder := job.GetRefundLadder(); ladder != nil {
+			ladderBytes, err := proto.Marshal(ladder)
+			if err != nil {
+				return nil, fmt.Errorf("failed to serialize refund fee ladder for leaf %s: %w", job.GetLeafId(), err)
+			}
+			updateOp = updateOp.SetRawRefundLadder(ladderBytes)
+		} else {
+			updateOp = updateOp.ClearRawRefundLadder()
+		}
 
 		if directJob, ok := directUserRefundMap[job.GetLeafId()]; ok {
 			directRefundTxParsed, err := common.TxFromRawTxBytes(directJob.GetRawTx())
@@ -4173,6 +4203,9 @@ func (h *TransferHandler) claimTransferSignRefunds(ctx context.Context, req *pb.
 			return nil, fmt.Errorf("unexpected leaf id %s", job.GetLeafId())
 		}
 
+		if job.GetRefundLadder() != nil {
+			return nil, sparkerrors.InvalidArgumentMalformedField(fmt.Errorf("leaf %s: refund fee ladders are only accepted by claim_transfer", job.GetLeafId()))
+		}
 		if isSupportedTransferType {
 			// Same fail-loud contract as prepareClaimRefundSigningJobs: an
 			// absent anchor on the claim path is a plumbing bug.

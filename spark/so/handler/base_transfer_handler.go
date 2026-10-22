@@ -1810,6 +1810,24 @@ func validateSingleLeafRefundTxs(
 	transferType st.TransferType,
 	refundTimelockAnchorTx []byte,
 ) error {
+	return validateSingleLeafRefundTxsOfType(ctx, node, cpfpRefundTx, directFromCpfpRefundTx, directRefundTx,
+		refundDestPubkey, transferType, refundTimelockAnchorTx, bitcointransaction.TxTypeRefundCPFP)
+}
+
+// validateSingleLeafRefundTxsOfType is validateSingleLeafRefundTxs with the
+// CPFP refund's expected construction given: the claim path passes
+// TxTypeRefundCPFPAnchorless for a refund that comes with a fee ladder.
+func validateSingleLeafRefundTxsOfType(
+	ctx context.Context,
+	node *ent.TreeNode,
+	cpfpRefundTx []byte,
+	directFromCpfpRefundTx []byte,
+	directRefundTx []byte,
+	refundDestPubkey keys.Public,
+	transferType st.TransferType,
+	refundTimelockAnchorTx []byte,
+	cpfpTxType bitcointransaction.TxType,
+) error {
 	if len(cpfpRefundTx) == 0 {
 		return sparkerrors.InvalidArgumentMissingField(fmt.Errorf("missing required CPFP refund tx for leaf"))
 	}
@@ -1829,7 +1847,7 @@ func validateSingleLeafRefundTxs(
 		ctx,
 		cpfpRefundTx,
 		node,
-		bitcointransaction.TxTypeRefundCPFP,
+		cpfpTxType,
 		refundDestPubkey,
 		networkString,
 		cpfpRefundTxTimelock,
