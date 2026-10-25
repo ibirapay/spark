@@ -154,6 +154,11 @@ func DirectRefundTxid(v schematype.TxID) predicate.TreeNode {
 	return predicate.TreeNode(sql.FieldEQ(FieldDirectRefundTxid, v))
 }
 
+// RawRefundLadder applies equality check predicate on the "raw_refund_ladder" field. It's identical to RawRefundLadderEQ.
+func RawRefundLadder(v []byte) predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldEQ(FieldRawRefundLadder, v))
+}
+
 // CreateTimeEQ applies the EQ predicate on the "create_time" field.
 func CreateTimeEQ(v time.Time) predicate.TreeNode {
 	return predicate.TreeNode(sql.FieldEQ(FieldCreateTime, v))
@@ -1072,6 +1077,56 @@ func DirectRefundTxidIsNil() predicate.TreeNode {
 // DirectRefundTxidNotNil applies the NotNil predicate on the "direct_refund_txid" field.
 func DirectRefundTxidNotNil() predicate.TreeNode {
 	return predicate.TreeNode(sql.FieldNotNull(FieldDirectRefundTxid))
+}
+
+// RawRefundLadderEQ applies the EQ predicate on the "raw_refund_ladder" field.
+func RawRefundLadderEQ(v []byte) predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldEQ(FieldRawRefundLadder, v))
+}
+
+// RawRefundLadderNEQ applies the NEQ predicate on the "raw_refund_ladder" field.
+func RawRefundLadderNEQ(v []byte) predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldNEQ(FieldRawRefundLadder, v))
+}
+
+// RawRefundLadderIn applies the In predicate on the "raw_refund_ladder" field.
+func RawRefundLadderIn(vs ...[]byte) predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldIn(FieldRawRefundLadder, vs...))
+}
+
+// RawRefundLadderNotIn applies the NotIn predicate on the "raw_refund_ladder" field.
+func RawRefundLadderNotIn(vs ...[]byte) predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldNotIn(FieldRawRefundLadder, vs...))
+}
+
+// RawRefundLadderGT applies the GT predicate on the "raw_refund_ladder" field.
+func RawRefundLadderGT(v []byte) predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldGT(FieldRawRefundLadder, v))
+}
+
+// RawRefundLadderGTE applies the GTE predicate on the "raw_refund_ladder" field.
+func RawRefundLadderGTE(v []byte) predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldGTE(FieldRawRefundLadder, v))
+}
+
+// RawRefundLadderLT applies the LT predicate on the "raw_refund_ladder" field.
+func RawRefundLadderLT(v []byte) predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldLT(FieldRawRefundLadder, v))
+}
+
+// RawRefundLadderLTE applies the LTE predicate on the "raw_refund_ladder" field.
+func RawRefundLadderLTE(v []byte) predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldLTE(FieldRawRefundLadder, v))
+}
+
+// RawRefundLadderIsNil applies the IsNil predicate on the "raw_refund_ladder" field.
+func RawRefundLadderIsNil() predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldIsNull(FieldRawRefundLadder))
+}
+
+// RawRefundLadderNotNil applies the NotNil predicate on the "raw_refund_ladder" field.
+func RawRefundLadderNotNil() predicate.TreeNode {
+	return predicate.TreeNode(sql.FieldNotNull(FieldRawRefundLadder))
 }
 
 // HasTree applies the HasEdge predicate on the "tree" edge.

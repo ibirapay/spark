@@ -310,6 +310,18 @@ func (tnu *TreeNodeUpdate) ClearDirectRefundTxid() *TreeNodeUpdate {
 	return tnu
 }
 
+// SetRawRefundLadder sets the "raw_refund_ladder" field.
+func (tnu *TreeNodeUpdate) SetRawRefundLadder(b []byte) *TreeNodeUpdate {
+	tnu.mutation.SetRawRefundLadder(b)
+	return tnu
+}
+
+// ClearRawRefundLadder clears the value of the "raw_refund_ladder" field.
+func (tnu *TreeNodeUpdate) ClearRawRefundLadder() *TreeNodeUpdate {
+	tnu.mutation.ClearRawRefundLadder()
+	return tnu
+}
+
 // SetParentID sets the "parent" edge to the TreeNode entity by ID.
 func (tnu *TreeNodeUpdate) SetParentID(id uuid.UUID) *TreeNodeUpdate {
 	tnu.mutation.SetParentID(id)
@@ -566,6 +578,12 @@ func (tnu *TreeNodeUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if tnu.mutation.DirectRefundTxidCleared() {
 		_spec.ClearField(treenode.FieldDirectRefundTxid, field.TypeBytes)
+	}
+	if value, ok := tnu.mutation.RawRefundLadder(); ok {
+		_spec.SetField(treenode.FieldRawRefundLadder, field.TypeBytes, value)
+	}
+	if tnu.mutation.RawRefundLadderCleared() {
+		_spec.ClearField(treenode.FieldRawRefundLadder, field.TypeBytes)
 	}
 	if tnu.mutation.ParentCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -969,6 +987,18 @@ func (tnuo *TreeNodeUpdateOne) ClearDirectRefundTxid() *TreeNodeUpdateOne {
 	return tnuo
 }
 
+// SetRawRefundLadder sets the "raw_refund_ladder" field.
+func (tnuo *TreeNodeUpdateOne) SetRawRefundLadder(b []byte) *TreeNodeUpdateOne {
+	tnuo.mutation.SetRawRefundLadder(b)
+	return tnuo
+}
+
+// ClearRawRefundLadder clears the value of the "raw_refund_ladder" field.
+func (tnuo *TreeNodeUpdateOne) ClearRawRefundLadder() *TreeNodeUpdateOne {
+	tnuo.mutation.ClearRawRefundLadder()
+	return tnuo
+}
+
 // SetParentID sets the "parent" edge to the TreeNode entity by ID.
 func (tnuo *TreeNodeUpdateOne) SetParentID(id uuid.UUID) *TreeNodeUpdateOne {
 	tnuo.mutation.SetParentID(id)
@@ -1255,6 +1285,12 @@ func (tnuo *TreeNodeUpdateOne) sqlSave(ctx context.Context) (_node *TreeNode, er
 	}
 	if tnuo.mutation.DirectRefundTxidCleared() {
 		_spec.ClearField(treenode.FieldDirectRefundTxid, field.TypeBytes)
+	}
+	if value, ok := tnuo.mutation.RawRefundLadder(); ok {
+		_spec.SetField(treenode.FieldRawRefundLadder, field.TypeBytes, value)
+	}
+	if tnuo.mutation.RawRefundLadderCleared() {
+		_spec.ClearField(treenode.FieldRawRefundLadder, field.TypeBytes)
 	}
 	if tnuo.mutation.ParentCleared() {
 		edge := &sqlgraph.EdgeSpec{

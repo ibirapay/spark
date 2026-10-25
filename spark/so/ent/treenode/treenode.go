@@ -61,6 +61,8 @@ const (
 	FieldRawRefundTxid = "raw_refund_txid"
 	// FieldDirectRefundTxid holds the string denoting the direct_refund_txid field in the database.
 	FieldDirectRefundTxid = "direct_refund_txid"
+	// FieldRawRefundLadder holds the string denoting the raw_refund_ladder field in the database.
+	FieldRawRefundLadder = "raw_refund_ladder"
 	// EdgeTree holds the string denoting the tree edge name in mutations.
 	EdgeTree = "tree"
 	// EdgeParent holds the string denoting the parent edge name in mutations.
@@ -119,6 +121,7 @@ var Columns = []string{
 	FieldDirectRefundTx,
 	FieldRawRefundTxid,
 	FieldDirectRefundTxid,
+	FieldRawRefundLadder,
 }
 
 // ForeignKeys holds the SQL foreign-keys that are owned by the "tree_nodes"

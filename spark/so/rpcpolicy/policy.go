@@ -20,6 +20,7 @@ import (
 	pbauthn "github.com/lightsparkdev/spark/proto/spark_authn"
 	pbinternal "github.com/lightsparkdev/spark/proto/spark_internal"
 	pbpartner "github.com/lightsparkdev/spark/proto/spark_partner"
+	pbssp "github.com/lightsparkdev/spark/proto/spark_ssp_internal"
 	pbtoken "github.com/lightsparkdev/spark/proto/spark_token"
 	pbtokeninternal "github.com/lightsparkdev/spark/proto/spark_token_internal"
 )
@@ -112,6 +113,20 @@ func init() {
 	register(mockServicePolicies())
 	register(healthServicePolicies())
 	register(sparkPartnerServicePolicies())
+	register(sparkSspInternalServicePolicies())
+}
+
+func sparkSspInternalServicePolicies() map[string]Policy {
+	sspInternal := Policy{AuthMode: AuthSession, InternalOnly: true}
+	return map[string]Policy{
+		pbssp.SparkSspInternalService_PrepareTreeAddress_FullMethodName:          sspInternal,
+		pbssp.SparkSspInternalService_QueryStaticDepositAddresses_FullMethodName: sspInternal,
+		pbssp.SparkSspInternalService_InitiateStaticDepositSwap_FullMethodName:   sspInternal,
+		pbssp.SparkSspInternalService_ReserveInstantDeposit_FullMethodName:       sspInternal,
+		pbssp.SparkSspInternalService_RecoverInstantDeposit_FullMethodName:       sspInternal,
+		pbssp.SparkSspInternalService_QueryNodes_FullMethodName:                  sspInternal,
+		pbssp.SparkSspInternalService_CreateTree_FullMethodName:                  sspInternal,
+	}
 }
 
 func sparkAuthnPolicies() map[string]Policy {
@@ -175,6 +190,7 @@ func sparkServicePolicies() map[string]Policy {
 		pbspark.SparkService_GetUtxosForIdentity_FullMethodName:                 {AuthMode: AuthAnonymous},
 		pbspark.SparkService_QuerySparkInvoices_FullMethodName:                  {AuthMode: AuthAnonymous},
 		pbspark.SparkService_InitiateSwapPrimaryTransfer_FullMethodName:         {AuthMode: AuthSession},
+		pbspark.SparkService_InitiateSwapCounterTransfer_FullMethodName:         {AuthMode: AuthSession},
 		pbspark.SparkService_UpdateWalletSetting_FullMethodName:                 {AuthMode: AuthSession},
 		pbspark.SparkService_QueryWalletSetting_FullMethodName:                  {AuthMode: AuthSession},
 		pbspark.SparkService_CreateDelegationGrant_FullMethodName:               {AuthMode: AuthSession},

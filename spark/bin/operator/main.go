@@ -89,13 +89,16 @@ type args struct {
 	OperatorsFilePath          string
 	Threshold                  uint64
 	SignerAddress              string
+	ListenAddress              string
 	Port                       uint64
 	HttpPort                   uint64
 	GrpcPort                   uint64
 	InternalGrpcPort           uint64
+	SSPGrpcPort                uint64
 	DatabasePath               string
 	EphemeralDatabasePath      string
 	RunningLocally             bool
+	DisableMockServer          bool
 	ChallengeTimeout           time.Duration
 	SessionDuration            time.Duration
 	AuthzEnforced              bool
@@ -153,13 +156,16 @@ func loadArgs() (*args, error) {
 	flag.StringVar(&args.OperatorsFilePath, "operators", "", "Path to operators file")
 	flag.Uint64Var(&args.Threshold, "threshold", 0, "Threshold value")
 	flag.StringVar(&args.SignerAddress, "signer", "", "Signer address")
+	flag.StringVar(&args.ListenAddress, "listen-address", "", "Bind host or IP for HTTP and all gRPC listeners (default: all interfaces)")
 	flag.Uint64Var(&args.Port, "port", 0, "DEPRECATED: Use --http-port instead. HTTP port (grpc-web + metrics)")
 	flag.Uint64Var(&args.HttpPort, "http-port", 0, "HTTP port (grpc-web + metrics)")
 	flag.Uint64Var(&args.GrpcPort, "grpc-port", 0, "Native gRPC port (if 0 or same as http-port, uses ServeHTTP multiplexing)")
 	flag.Uint64Var(&args.InternalGrpcPort, "internal-grpc-port", 0, "If non-zero, start a second gRPC listener on this port that requires TLS + brontide mutual auth. Hosts the SO-to-SO services (SparkInternal, SparkTokenInternal, Gossip, DKG). Internal services remain registered on the public listener too; a future change will introduce a flag to take them off the public listener once peer clients are brontide-aware.")
+	flag.Uint64Var(&args.SSPGrpcPort, "ssp-grpc-port", 0, "If non-zero, start a TLS gRPC listener for the authenticated SSP-only service")
 	flag.StringVar(&args.DatabasePath, "database", "", "Path to database file")
 	flag.StringVar(&args.EphemeralDatabasePath, "ephemeral-database", "", "Path to ephemeral database file")
 	flag.BoolVar(&args.RunningLocally, "local", false, "Running locally")
+	flag.BoolVar(&args.DisableMockServer, "disable-mock-server", false, "Do not register MockService in local mode")
 	flag.DurationVar(&args.ChallengeTimeout, "challenge-timeout", time.Minute, "Challenge timeout")
 	flag.DurationVar(&args.SessionDuration, "session-duration", time.Minute*15, "Session duration")
 	flag.BoolVar(&args.AuthzEnforced, "authz-enforced", true, "Enforce authorization checks")
@@ -218,6 +224,17 @@ func loadArgs() (*args, error) {
 		// grpc-port of 0 means ServeHTTP multiplexing with no separate gRPC listener, so it only conflicts when non-zero.
 		if args.GrpcPort != 0 && args.InternalGrpcPort == args.GrpcPort {
 			return nil, fmt.Errorf("internal-grpc-port (%d) must differ from grpc-port", args.InternalGrpcPort)
+		}
+	}
+	if args.SSPGrpcPort != 0 {
+		if args.SSPGrpcPort == args.HttpPort {
+			return nil, fmt.Errorf("ssp-grpc-port (%d) must differ from http-port", args.SSPGrpcPort)
+		}
+		if args.GrpcPort != 0 && args.SSPGrpcPort == args.GrpcPort {
+			return nil, fmt.Errorf("ssp-grpc-port (%d) must differ from grpc-port", args.SSPGrpcPort)
+		}
+		if args.InternalGrpcPort != 0 && args.SSPGrpcPort == args.InternalGrpcPort {
+			return nil, fmt.Errorf("ssp-grpc-port (%d) must differ from internal-grpc-port", args.SSPGrpcPort)
 		}
 	}
 
@@ -530,6 +547,12 @@ func main() {
 		if ephemeralEnabled {
 			ephemeralDbClient = entephemeral.NewClient(entephemeral.Driver(ephemeralDialectDriver))
 		}
+	}
+
+	// Local fixtures can start with empty databases. Initialize both schemas
+	// before installing database hooks or starting any database consumers.
+	if err := initializeLocalSchemas(errCtx, args.RunningLocally, dbDriver, dbClient, ephemeralDbClient); err != nil {
+		logger.Fatal("Failed to initialize local database schemas", zap.Error(err))
 	}
 
 	// Add interceptor for query stats and read operation metrics
@@ -976,6 +999,20 @@ func main() {
 		grpc_health_v1.RegisterHealthServer(internalGrpcServer, healthServer)
 	}
 
+	// The SSP listener uses ordinary TLS and session authentication rather than SO-to-SO brontide. Keeping it on a
+	// separate listener allows deployments to make the API reachable only from their SSP network.
+	var sspGrpcServer *grpc.Server
+	if args.SSPGrpcPort != 0 {
+		sspOpts := append(slices.Clone(serverOpts), grpc.Creds(tlsCreds))
+		sspGrpcServer = grpc.NewServer(sspOpts...)
+		if err := RegisterSSPGrpcServers(sspGrpcServer, args, config, sessionTokenCreatorVerifier); err != nil {
+			logger.Fatal("Failed to register SSP gRPC servers", zap.Error(err))
+		}
+
+		healthServer := sparkgrpc.NewHealthServer(errCtx, dbClient, ephemeralDbClient)
+		grpc_health_v1.RegisterHealthServer(sspGrpcServer, healthServer)
+	}
+
 	healthServer := sparkgrpc.NewHealthServer(errCtx, dbClient, ephemeralDbClient)
 	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
 
@@ -987,6 +1024,11 @@ func main() {
 	if internalGrpcServer != nil {
 		if missing := registeredMethodsMissingPolicy(internalGrpcServer); len(missing) > 0 {
 			logger.Sugar().Fatalf("gRPC methods registered on internal listener without an rpcpolicy entry: %v", missing)
+		}
+	}
+	if sspGrpcServer != nil {
+		if missing := registeredMethodsMissingPolicy(sspGrpcServer); len(missing) > 0 {
+			logger.Sugar().Fatalf("gRPC methods registered on SSP listener without an rpcpolicy entry: %v", missing)
 		}
 	}
 
@@ -1038,7 +1080,7 @@ func main() {
 			zap.Uint64("http_port", args.HttpPort))
 
 		var err error
-		grpcListener, err = net.Listen("tcp", fmt.Sprintf(":%d", args.GrpcPort))
+		grpcListener, err = net.Listen("tcp", args.listenAddr(args.GrpcPort))
 		if err != nil {
 			logger.Fatal("Failed to create gRPC listener", zap.Error(err))
 		}
@@ -1125,7 +1167,7 @@ func main() {
 	}
 
 	server := &http.Server{
-		Addr:      fmt.Sprintf(":%d", args.HttpPort),
+		Addr:      args.listenAddr(args.HttpPort),
 		Handler:   mux,
 		TLSConfig: &tlsConfig,
 		// Prevent a slowloris attack where a peer opens a connection and dribbles headers to pin server resources.
@@ -1147,7 +1189,7 @@ func main() {
 	})
 
 	if internalGrpcServer != nil {
-		internalListener, err := net.Listen("tcp", fmt.Sprintf(":%d", args.InternalGrpcPort))
+		internalListener, err := net.Listen("tcp", args.listenAddr(args.InternalGrpcPort))
 		if err != nil {
 			logger.Fatal("Failed to create internal gRPC listener", zap.Error(err))
 		}
@@ -1155,6 +1197,20 @@ func main() {
 			logger.Sugar().Infof("Internal gRPC server listening (TLS + brontide) on port %d", args.InternalGrpcPort)
 			if err := internalGrpcServer.Serve(internalListener); err != nil {
 				logger.Error("Internal gRPC server failed", zap.Error(err))
+				return err
+			}
+			return nil
+		})
+	}
+	if sspGrpcServer != nil {
+		sspListener, err := net.Listen("tcp", args.listenAddr(args.SSPGrpcPort))
+		if err != nil {
+			logger.Fatal("Failed to create SSP gRPC listener", zap.Error(err))
+		}
+		errGrp.Go(func() error {
+			logger.Sugar().Infof("SSP gRPC server listening (TLS + session authentication) on port %d", args.SSPGrpcPort)
+			if err := sspGrpcServer.Serve(sspListener); err != nil {
+				logger.Error("SSP gRPC server failed", zap.Error(err))
 				return err
 			}
 			return nil
@@ -1218,6 +1274,11 @@ func main() {
 	if internalGrpcServer != nil {
 		wg.Go(func() {
 			stopGraceful("internal", internalGrpcServer)
+		})
+	}
+	if sspGrpcServer != nil {
+		wg.Go(func() {
+			stopGraceful("SSP", sspGrpcServer)
 		})
 	}
 	wg.Wait()

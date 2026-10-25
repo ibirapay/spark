@@ -105,6 +105,11 @@ service SparkService {
     // It will be done later, when the SSP initiates a counter swap.
     rpc initiate_swap_primary_transfer(InitiateSwapPrimaryTransferRequest) returns (InitiateSwapPrimaryTransferResponse) {}
 
+    // Initiates the SSP counter transfer that atomically settles both sides of
+    // a Swap V3 operation. The authenticated sender must be the receiver of
+    // the referenced primary transfer.
+    rpc initiate_swap_counter_transfer(InitiateSwapCounterTransferRequest) returns (StartTransferResponse) {}
+
     rpc update_wallet_setting(UpdateWalletSettingRequest) returns (UpdateWalletSettingResponse) {}
     rpc query_wallet_setting(QueryWalletSettingRequest) returns (QueryWalletSettingResponse) {}
 
@@ -432,6 +437,12 @@ message RenewNodeTimelockSigningJob {
     UserSignedTxSigningJob direct_node_tx_signing_job = 5;
     UserSignedTxSigningJob direct_refund_tx_signing_job = 6;
     UserSignedTxSigningJob direct_from_cpfp_refund_tx_signing_job = 7;
+
+    // SP-4089 Phase 3 DIRECT_NODE fee-bump ladder for the leaf's node-hop direct
+    // tx: J FROST-co-signed direct_tx variants at ascending fees, in place of the
+    // single direct_node_tx_signing_job. Additive and optional (old clients omit).
+    repeated UserSignedTxSigningJob direct_node_ladder_signing_jobs = 8;
+    uint32 direct_node_ladder_rung_table_version = 9;
 }
 
 message RenewRefundTimelockSigningJob {
@@ -445,6 +456,12 @@ message RenewRefundTimelockSigningJob {
     UserSignedTxSigningJob direct_node_tx_signing_job = 3;
     UserSignedTxSigningJob direct_refund_tx_signing_job = 4;
     UserSignedTxSigningJob direct_from_cpfp_refund_tx_signing_job = 5;
+
+    // SP-4089 Phase 3 DIRECT_NODE fee-bump ladder for the leaf's node-hop direct
+    // tx: J FROST-co-signed direct_tx variants at ascending fees, in place of the
+    // single direct_node_tx_signing_job. Additive and optional (old clients omit).
+    repeated UserSignedTxSigningJob direct_node_ladder_signing_jobs = 6;
+    uint32 direct_node_ladder_rung_table_version = 7;
 }
 
 message RenewNodeZeroTimelockSigningJob {
@@ -459,6 +476,12 @@ message RenewNodeZeroTimelockSigningJob {
     UserSignedTxSigningJob refund_tx_signing_job = 2;
     UserSignedTxSigningJob direct_node_tx_signing_job = 3;
     UserSignedTxSigningJob direct_from_cpfp_refund_tx_signing_job = 5;
+
+    // SP-4089 Phase 3 DIRECT_NODE fee-bump ladder for the leaf's node-hop direct
+    // tx: J FROST-co-signed direct_tx variants at ascending fees, in place of the
+    // single direct_node_tx_signing_job. Additive and optional (old clients omit).
+    repeated UserSignedTxSigningJob direct_node_ladder_signing_jobs = 6;
+    uint32 direct_node_ladder_rung_table_version = 7;
 
     // Notice no signing job for the split node; we will be using the existing
     // node transaction.
@@ -700,11 +723,41 @@ message SecretProof {
     repeated bytes proofs = 1;
 }
 
+// FeeBumpLadder is a set of pre-signed CPFP fee-bump transactions ("rungs")
+// uploaded alongside a user-signed refund tx (SP-4089). The watchtower
+// broadcasts the cheapest rung that clears the mempool for an honest exit and
+// climbs against the defense-window budget when contested. The fee comes out of
+// the leaf itself, so no separately funded UTXO is required.
+message FeeBumpLadder {
+    // Protocol rung table plus vsize basis these rungs were signed against.
+    // Persisted alongside the ladder so the SO can reject rungs signed against
+    // an outdated basis without deserializing them.
+    uint32 rung_table_version = 1;
+    // Rungs in ascending-feerate order; the position is the rung index (index 0
+    // is the cheapest). Order is positional and the feerate is derived from each
+    // signed tx, so neither is carried on the rung itself.
+    repeated FeeBumpRung rungs = 2;
+}
+
+// FeeBumpRung is one pre-signed CPFP transaction in a FeeBumpLadder. It spends
+// the refund output and pays the remainder back to the owner minus the package
+// fee. Kept as a message rather than a bare bytes so per-rung fields can be
+// added later without a breaking change.
+message FeeBumpRung {
+    // Fully signed rung tx with witness included, broadcast verbatim by the
+    // watchtower with no reconstruction step. The feerate (fee / package vsize)
+    // is derived from this tx at store time.
+    bytes signed_tx = 1;
+}
+
 message LeafRefundTxSigningJob {
     string leaf_id = 1;
     SigningJob refund_tx_signing_job = 2;
     SigningJob direct_refund_tx_signing_job = 3;
     SigningJob direct_from_cpfp_refund_tx_signing_job = 4;
+    // Optional CPFP fee-bump ladder for this leaf's refund tx (SP-4089), mirroring
+    // UserSignedTxSigningJob.refund_ladder. Additive and optional.
+    FeeBumpLadder refund_ladder = 5;
 }
 
 message UserSignedTxSigningJob {
@@ -725,6 +778,11 @@ message UserSignedTxSigningJob {
     // (signing_nonce_commitment, user_signature). Exactly one of the two
     // forms may be present.
     repeated SubUserSigningContribution subuser_contributions = 8;
+    // Optional CPFP fee-bump ladder for this leaf's refund tx (SP-4089). When
+    // present, the SO validates and stores it so the watchtower can fee-compete
+    // an honest exit rather than relying on the flat-fee direct chain. Additive
+    // and optional: old clients omit it and keep their existing defense.
+    FeeBumpLadder refund_ladder = 9;
 }
 
 // InputSigningData carries the per-input signing data for additional root tx
@@ -1943,6 +2001,15 @@ message InitiateSwapPrimaryTransferRequest {
 message InitiateSwapPrimaryTransferResponse {
     Transfer transfer = 1;
     repeated LeafRefundTxSigningResult signing_results = 2;
+}
+
+message InitiateSwapCounterTransferRequest {
+    // Counter transfer with refunds and key tweaks signed by the SSP.
+    StartTransferRequest transfer = 1;
+    // Adaptor public keys from the user's primary swap request.
+    AdaptorPublicKeyPackage adaptor_public_keys = 2;
+    // The primary transfer that this counter transfer settles.
+    string primary_transfer_id = 3 [(validate.rules).string.uuid = true];
 }
 
 // Adaptor public key is derived from the secret `t` using formula:

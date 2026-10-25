@@ -145,6 +145,9 @@ func (TreeNode) Fields() []ent.Field {
 			Annotations(entexample.Default(
 				"7c9cb91704f52a0959125cf87438043c6e55536da0359ef476173f9f33b8af15",
 			)),
+		field.Bytes("raw_refund_ladder").
+			Optional().
+			Comment("Serialized spark.FeeBumpLadder (SP-4089) the owner signed for raw_refund_tx: pre-signed CPFP children at ascending fees for the watchtower. Only meaningful while its rungs spend the current raw_refund_txid."),
 	}
 }
 

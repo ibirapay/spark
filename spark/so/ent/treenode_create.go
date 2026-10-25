@@ -227,6 +227,12 @@ func (tnc *TreeNodeCreate) SetNillableDirectRefundTxid(si *schematype.TxID) *Tre
 	return tnc
 }
 
+// SetRawRefundLadder sets the "raw_refund_ladder" field.
+func (tnc *TreeNodeCreate) SetRawRefundLadder(b []byte) *TreeNodeCreate {
+	tnc.mutation.SetRawRefundLadder(b)
+	return tnc
+}
+
 // SetID sets the "id" field.
 func (tnc *TreeNodeCreate) SetID(u uuid.UUID) *TreeNodeCreate {
 	tnc.mutation.SetID(u)
@@ -530,6 +536,10 @@ func (tnc *TreeNodeCreate) createSpec() (*TreeNode, *sqlgraph.CreateSpec) {
 	if value, ok := tnc.mutation.DirectRefundTxid(); ok {
 		_spec.SetField(treenode.FieldDirectRefundTxid, field.TypeBytes, value)
 		_node.DirectRefundTxid = value
+	}
+	if value, ok := tnc.mutation.RawRefundLadder(); ok {
+		_spec.SetField(treenode.FieldRawRefundLadder, field.TypeBytes, value)
+		_node.RawRefundLadder = value
 	}
 	if nodes := tnc.mutation.TreeIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -938,6 +948,24 @@ func (u *TreeNodeUpsert) ClearDirectRefundTxid() *TreeNodeUpsert {
 	return u
 }
 
+// SetRawRefundLadder sets the "raw_refund_ladder" field.
+func (u *TreeNodeUpsert) SetRawRefundLadder(v []byte) *TreeNodeUpsert {
+	u.Set(treenode.FieldRawRefundLadder, v)
+	return u
+}
+
+// UpdateRawRefundLadder sets the "raw_refund_ladder" field to the value that was provided on create.
+func (u *TreeNodeUpsert) UpdateRawRefundLadder() *TreeNodeUpsert {
+	u.SetExcluded(treenode.FieldRawRefundLadder)
+	return u
+}
+
+// ClearRawRefundLadder clears the value of the "raw_refund_ladder" field.
+func (u *TreeNodeUpsert) ClearRawRefundLadder() *TreeNodeUpsert {
+	u.SetNull(treenode.FieldRawRefundLadder)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
@@ -1331,6 +1359,27 @@ func (u *TreeNodeUpsertOne) UpdateDirectRefundTxid() *TreeNodeUpsertOne {
 func (u *TreeNodeUpsertOne) ClearDirectRefundTxid() *TreeNodeUpsertOne {
 	return u.Update(func(s *TreeNodeUpsert) {
 		s.ClearDirectRefundTxid()
+	})
+}
+
+// SetRawRefundLadder sets the "raw_refund_ladder" field.
+func (u *TreeNodeUpsertOne) SetRawRefundLadder(v []byte) *TreeNodeUpsertOne {
+	return u.Update(func(s *TreeNodeUpsert) {
+		s.SetRawRefundLadder(v)
+	})
+}
+
+// UpdateRawRefundLadder sets the "raw_refund_ladder" field to the value that was provided on create.
+func (u *TreeNodeUpsertOne) UpdateRawRefundLadder() *TreeNodeUpsertOne {
+	return u.Update(func(s *TreeNodeUpsert) {
+		s.UpdateRawRefundLadder()
+	})
+}
+
+// ClearRawRefundLadder clears the value of the "raw_refund_ladder" field.
+func (u *TreeNodeUpsertOne) ClearRawRefundLadder() *TreeNodeUpsertOne {
+	return u.Update(func(s *TreeNodeUpsert) {
+		s.ClearRawRefundLadder()
 	})
 }
 
@@ -1894,6 +1943,27 @@ func (u *TreeNodeUpsertBulk) UpdateDirectRefundTxid() *TreeNodeUpsertBulk {
 func (u *TreeNodeUpsertBulk) ClearDirectRefundTxid() *TreeNodeUpsertBulk {
 	return u.Update(func(s *TreeNodeUpsert) {
 		s.ClearDirectRefundTxid()
+	})
+}
+
+// SetRawRefundLadder sets the "raw_refund_ladder" field.
+func (u *TreeNodeUpsertBulk) SetRawRefundLadder(v []byte) *TreeNodeUpsertBulk {
+	return u.Update(func(s *TreeNodeUpsert) {
+		s.SetRawRefundLadder(v)
+	})
+}
+
+// UpdateRawRefundLadder sets the "raw_refund_ladder" field to the value that was provided on create.
+func (u *TreeNodeUpsertBulk) UpdateRawRefundLadder() *TreeNodeUpsertBulk {
+	return u.Update(func(s *TreeNodeUpsert) {
+		s.UpdateRawRefundLadder()
+	})
+}
+
+// ClearRawRefundLadder clears the value of the "raw_refund_ladder" field.
+func (u *TreeNodeUpsertBulk) ClearRawRefundLadder() *TreeNodeUpsertBulk {
+	return u.Update(func(s *TreeNodeUpsert) {
+		s.ClearRawRefundLadder()
 	})
 }
 

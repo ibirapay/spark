@@ -2,6 +2,7 @@ package watchtower
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -69,12 +70,19 @@ func init() {
 	}
 }
 
-type bitcoinClient interface {
+// rawTxSender is all a single-transaction broadcast needs, so callers outside
+// the watchtower can pass a narrower client.
+type rawTxSender interface {
 	SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error)
 }
 
+type bitcoinClient interface {
+	rawTxSender
+	RawRequest(method string, params []json.RawMessage) (json.RawMessage, error)
+}
+
 // BroadcastTransaction broadcasts a transaction to the network
-func BroadcastTransaction(ctx context.Context, btcClient bitcoinClient, nodeID uuid.UUID, txBytes []byte) error {
+func BroadcastTransaction(ctx context.Context, btcClient rawTxSender, nodeID uuid.UUID, txBytes []byte) error {
 	logger := logging.GetLoggerFromContext(ctx)
 
 	tx, err := common.TxFromRawTxBytes(txBytes)
@@ -424,6 +432,16 @@ func checkAndBroadcastRefundTx(ctx context.Context, bitcoinClient bitcoinClient,
 
 	logger := logging.GetLoggerFromContext(ctx)
 
+	// The CPFP refund's timelock runs out DirectTimelockOffset blocks before the
+	// direct refunds', and a fee ladder lets it pay a market fee.
+	sent, err := tryBroadcastRefundLadder(ctx, bitcoinClient, node, blockHeight, network)
+	if sent {
+		return nil
+	}
+	if err != nil {
+		logger.With(zap.Error(err)).Sugar().Infof("Refund ladder not broadcast for node %s, trying the direct refunds", node.ID)
+	}
+
 	candidates := [][]byte{node.DirectRefundTx, node.DirectFromCpfpRefundTx}
 
 	var lastErr error
@@ -494,7 +512,7 @@ func checkAndBroadcastRefundTx(ctx context.Context, bitcoinClient bitcoinClient,
 
 func broadcastWithMetric(
 	ctx context.Context,
-	btcClient bitcoinClient,
+	btcClient rawTxSender,
 	nodeID uuid.UUID,
 	txBytes []byte,
 	network btcnetwork.Network,

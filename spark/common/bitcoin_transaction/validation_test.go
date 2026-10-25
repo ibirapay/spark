@@ -912,3 +912,36 @@ func TestVerifyTransactionWithDatabase_MisalignedTimelock(t *testing.T) {
 
 	require.NoError(t, bitcointransaction.VerifyTransactionWithDatabase(ctx, clientRawTx, dbLeaf, bitcointransaction.TxTypeRefundCPFP, pubKey, networkString))
 }
+
+// A CPFP refund without the anchor verifies only as TxTypeRefundCPFPAnchorless,
+// and the anchored one only as TxTypeRefundCPFP.
+func TestVerifyTransactionWithDatabase_AnchorlessCPFPRefund(t *testing.T) {
+	ctx, _ := db.NewTestSQLiteContext(t)
+
+	dbLeaf, refundDestPubkey := newTestLeafNode(t)
+	networkString := dbLeaf.Network.String()
+	userScript, err := common.P2TRScriptFromPubKey(refundDestPubkey)
+	require.NoError(t, err)
+
+	anchorless := wire.NewMsgTx(defaultVersion)
+	anchorless.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: wire.OutPoint{Hash: dbLeaf.RawTxid.Hash(), Index: 0},
+		Sequence:         expectedCpfpTimelock,
+	})
+	anchorless.AddTxOut(&wire.TxOut{Value: testSourceValue, PkScript: userScript})
+	anchored := anchorless.Copy()
+	anchored.AddTxOut(common.EphemeralAnchorOutput())
+
+	require.NoError(t, bitcointransaction.VerifyTransactionWithDatabase(ctx, serializeTx(t, anchorless), dbLeaf, bitcointransaction.TxTypeRefundCPFPAnchorless, refundDestPubkey, networkString))
+	require.NoError(t, bitcointransaction.VerifyTransactionWithDatabase(ctx, serializeTx(t, anchored), dbLeaf, bitcointransaction.TxTypeRefundCPFP, refundDestPubkey, networkString))
+
+	err = bitcointransaction.VerifyTransactionWithDatabase(ctx, serializeTx(t, anchored), dbLeaf, bitcointransaction.TxTypeRefundCPFPAnchorless, refundDestPubkey, networkString)
+	require.ErrorContains(t, err, "expected 1 outputs, got 2")
+	err = bitcointransaction.VerifyTransactionWithDatabase(ctx, serializeTx(t, anchorless), dbLeaf, bitcointransaction.TxTypeRefundCPFP, refundDestPubkey, networkString)
+	require.ErrorContains(t, err, "expected 2 outputs, got 1")
+
+	fewerSats := anchorless.Copy()
+	fewerSats.TxOut[0].Value--
+	err = bitcointransaction.VerifyTransactionWithDatabase(ctx, serializeTx(t, fewerSats), dbLeaf, bitcointransaction.TxTypeRefundCPFPAnchorless, refundDestPubkey, networkString)
+	require.ErrorContains(t, err, "transaction does not match expected construction")
+}
