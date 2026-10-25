@@ -98,6 +98,7 @@ type args struct {
 	DatabasePath               string
 	EphemeralDatabasePath      string
 	RunningLocally             bool
+	StaticKnobs                bool
 	DisableMockServer          bool
 	ChallengeTimeout           time.Duration
 	SessionDuration            time.Duration
@@ -165,6 +166,7 @@ func loadArgs() (*args, error) {
 	flag.StringVar(&args.DatabasePath, "database", "", "Path to database file")
 	flag.StringVar(&args.EphemeralDatabasePath, "ephemeral-database", "", "Path to ephemeral database file")
 	flag.BoolVar(&args.RunningLocally, "local", false, "Running locally")
+	flag.BoolVar(&args.StaticKnobs, "static-knobs", false, "Use knobs.static_values from the config file without -local (deployments without the k8s knobs service)")
 	flag.BoolVar(&args.DisableMockServer, "disable-mock-server", false, "Do not register MockService in local mode")
 	flag.DurationVar(&args.ChallengeTimeout, "challenge-timeout", time.Minute, "Challenge timeout")
 	flag.DurationVar(&args.SessionDuration, "session-duration", time.Minute*15, "Session duration")
@@ -452,9 +454,9 @@ func main() {
 		} else {
 			valuesProvider = provider
 		}
-	} else if args.RunningLocally && len(config.Knobs.StaticValues) > 0 {
-		// Fallback for bare-process deployments (dev-cli, run-everything.sh):
-		// use static values from the YAML config
+	} else if (args.RunningLocally || args.StaticKnobs) && len(config.Knobs.StaticValues) > 0 {
+		// Bare-process deployments (dev-cli, run-everything.sh, or -static-knobs in production,
+		// which must not also get -local's MockService and test-env task filtering).
 		valuesProvider = knobs.NewStaticValuesProvider(config.Knobs.StaticValues)
 	}
 
