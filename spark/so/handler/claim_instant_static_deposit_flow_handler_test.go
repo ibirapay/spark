@@ -186,6 +186,26 @@ func TestClaimInstantFlowHandler_Commit_CompletesReservation(t *testing.T) {
 	assert.Equal(t, st.UtxoSwapStatusCompleted, updatedSwap.Status)
 }
 
+// TestClaimInstantFlowHandler_Commit_WithoutPreparedUtxo_Refuses: a CREATED
+// reservation whose utxo edge no claim prepare linked must not complete.
+func TestClaimInstantFlowHandler_Commit_WithoutPreparedUtxo_Refuses(t *testing.T) {
+	t.Parallel()
+	ctx, _ := db.ConnectToTestPostgres(t)
+	f := createTestClaimableInstantSwap(t, ctx, nil)
+	_, err := f.swap.Update().ClearUtxo().Save(ctx)
+	require.NoError(t, err)
+
+	handler := NewClaimInstantStaticDepositFlowHandler(setUpTestConfigWithRegtestNoAuthz(t))
+	err = handler.Commit(ctx, &pbinternal.ClaimInstantStaticDepositUtxoSwapCommitRequest{TransferId: f.primary.ID.String()})
+	require.ErrorContains(t, err, "has no utxo linked by a claim prepare")
+
+	dbTx, err := ent.GetDbFromContext(ctx)
+	require.NoError(t, err)
+	updatedSwap, err := dbTx.UtxoSwap.Get(ctx, f.swap.ID)
+	require.NoError(t, err)
+	assert.Equal(t, st.UtxoSwapStatusCreated, updatedSwap.Status)
+}
+
 // TestClaimInstantFlowHandler_Commit_AlreadyCompleted_NoOp is the redelivery
 // idempotency leg.
 func TestClaimInstantFlowHandler_Commit_AlreadyCompleted_NoOp(t *testing.T) {

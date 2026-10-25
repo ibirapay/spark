@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"bytes"
+
 	"github.com/google/uuid"
 	"github.com/lightsparkdev/spark/common/keys"
+	pbspark "github.com/lightsparkdev/spark/proto/spark"
 )
 
 // sameTransferID reports whether two transfer-id strings denote the same UUID,
@@ -47,4 +50,16 @@ func samePublicKey(a, b []byte) bool {
 		return false
 	}
 	return pa.Equals(pb)
+}
+
+// sameUTXO reports whether two UTXO references name the same outpoint on the
+// same network. Commit and rollback locate a static-deposit swap row by
+// (network, txid, vout), so those are the fields a forged decision would change.
+// An empty txid on either side is a mismatch: the row lookup needs it, so only a
+// malformed or forged payload omits it.
+func sameUTXO(a, b *pbspark.UTXO) bool {
+	return len(a.GetTxid()) > 0 &&
+		bytes.Equal(a.GetTxid(), b.GetTxid()) &&
+		a.GetVout() == b.GetVout() &&
+		a.GetNetwork() == b.GetNetwork()
 }

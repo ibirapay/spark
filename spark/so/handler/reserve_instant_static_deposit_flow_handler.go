@@ -37,7 +37,39 @@ type ReserveInstantStaticDepositFlowHandler struct {
 	transfer *SendTransferFlowHandler
 }
 
-var _ consensus.FlowHandler = (*ReserveInstantStaticDepositFlowHandler)(nil)
+var (
+	_ consensus.FlowHandler             = (*ReserveInstantStaticDepositFlowHandler)(nil)
+	_ consensus.PrepareBoundFlowHandler = (*ReserveInstantStaticDepositFlowHandler)(nil)
+)
+
+// ValidateDecisionAgainstPrepare implements consensus.PrepareBoundFlowHandler:
+// commit applies transfer_commit to the transfer it names and rollback picks the
+// reservation by requested_transfer_id, both straight from the payload, so bind
+// them to the primary transfer this SO prepared. Otherwise a coordinator could
+// reuse a valid IN_FLIGHT reserve flow id against an unrelated transfer.
+func (h *ReserveInstantStaticDepositFlowHandler) ValidateDecisionAgainstPrepare(prepareOp proto.Message, decisionOp proto.Message) error {
+	prepare, ok := prepareOp.(*pbinternal.ReserveInstantStaticDepositUtxoSwapPrepareRequest)
+	if !ok {
+		return fmt.Errorf("unexpected prepare op type %T for reserve instant static deposit", prepareOp)
+	}
+	preparedTransferID := prepare.GetOriginalRequest().GetTransfer().GetTransferId()
+	var transferID string
+	switch d := decisionOp.(type) {
+	case *pbinternal.ReserveInstantStaticDepositUtxoSwapCommitRequest:
+		transferID = d.GetTransferCommit().GetTransferId()
+	case *pbinternal.ReserveInstantStaticDepositUtxoSwapRollbackRequest:
+		transferID = d.GetRequestedTransferId()
+	case *pbinternal.ReserveInstantStaticDepositUtxoSwapPrepareRequest:
+		// The reconciler's presumed-abort path echoes the prepare op itself.
+		transferID = d.GetOriginalRequest().GetTransfer().GetTransferId()
+	default:
+		return fmt.Errorf("unexpected decision op type %T for reserve instant static deposit", decisionOp)
+	}
+	if !sameTransferID(transferID, preparedTransferID) {
+		return fmt.Errorf("decision transfer id %s does not match the prepared transfer id %s", transferID, preparedTransferID)
+	}
+	return nil
+}
 
 func NewReserveInstantStaticDepositFlowHandler(config *so.Config) *ReserveInstantStaticDepositFlowHandler {
 	return &ReserveInstantStaticDepositFlowHandler{

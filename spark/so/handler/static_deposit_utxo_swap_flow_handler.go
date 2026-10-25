@@ -41,7 +41,43 @@ type StaticDepositUtxoSwapFlowHandler struct {
 	transfer *SendTransferFlowHandler
 }
 
-var _ consensus.FlowHandler = (*StaticDepositUtxoSwapFlowHandler)(nil)
+var (
+	_ consensus.FlowHandler             = (*StaticDepositUtxoSwapFlowHandler)(nil)
+	_ consensus.PrepareBoundFlowHandler = (*StaticDepositUtxoSwapFlowHandler)(nil)
+)
+
+// ValidateDecisionAgainstPrepare implements consensus.PrepareBoundFlowHandler:
+// commit completes the swap found by the payload's on_chain_utxo and applies
+// transfer_commit to the transfer it names, and rollback cancels by
+// on_chain_utxo, so bind the outpoint and the transfer id to this SO's prepare.
+// Otherwise a coordinator could reuse a valid IN_FLIGHT fixed-swap flow id to
+// complete or cancel a different UTXO's swap.
+func (h *StaticDepositUtxoSwapFlowHandler) ValidateDecisionAgainstPrepare(prepareOp proto.Message, decisionOp proto.Message) error {
+	prepare, ok := prepareOp.(*pbinternal.StaticDepositUtxoSwapPrepareRequest)
+	if !ok {
+		return fmt.Errorf("unexpected prepare op type %T for static deposit utxo swap", prepareOp)
+	}
+	prepared := prepare.GetOriginalRequest()
+	var utxo *pbspark.UTXO
+	switch d := decisionOp.(type) {
+	case *pbinternal.StaticDepositUtxoSwapCommitRequest:
+		utxo = d.GetOnChainUtxo()
+		if !sameTransferID(d.GetTransferCommit().GetTransferId(), prepared.GetTransfer().GetTransferId()) {
+			return fmt.Errorf("commit transfer id %s does not match the prepared transfer id %s", d.GetTransferCommit().GetTransferId(), prepared.GetTransfer().GetTransferId())
+		}
+	case *pbinternal.StaticDepositUtxoSwapRollbackRequest:
+		utxo = d.GetOnChainUtxo()
+	case *pbinternal.StaticDepositUtxoSwapPrepareRequest:
+		// The reconciler's presumed-abort path echoes the prepare op itself.
+		utxo = d.GetOriginalRequest().GetOnChainUtxo()
+	default:
+		return fmt.Errorf("unexpected decision op type %T for static deposit utxo swap", decisionOp)
+	}
+	if !sameUTXO(utxo, prepared.GetOnChainUtxo()) {
+		return fmt.Errorf("decision utxo %x:%d does not match the prepared utxo %x:%d", utxo.GetTxid(), utxo.GetVout(), prepared.GetOnChainUtxo().GetTxid(), prepared.GetOnChainUtxo().GetVout())
+	}
+	return nil
+}
 
 func NewStaticDepositUtxoSwapFlowHandler(config *so.Config) *StaticDepositUtxoSwapFlowHandler {
 	return &StaticDepositUtxoSwapFlowHandler{

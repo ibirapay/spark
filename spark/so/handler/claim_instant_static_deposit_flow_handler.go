@@ -41,7 +41,46 @@ type ClaimInstantStaticDepositFlowHandler struct {
 	transfer *SendTransferFlowHandler
 }
 
-var _ consensus.FlowHandler = (*ClaimInstantStaticDepositFlowHandler)(nil)
+var (
+	_ consensus.FlowHandler             = (*ClaimInstantStaticDepositFlowHandler)(nil)
+	_ consensus.PrepareBoundFlowHandler = (*ClaimInstantStaticDepositFlowHandler)(nil)
+)
+
+// ValidateDecisionAgainstPrepare implements consensus.PrepareBoundFlowHandler:
+// commit resolves the reservation purely from the payload's primary
+// transfer_id (and applies transfer_commit to the transfer it names), so both
+// are bound to what this SO prepared. Otherwise a coordinator could reuse a
+// valid IN_FLIGHT claim flow id to complete an unrelated CREATED reservation
+// whose UTXO and spend tx were never validated by this flow's prepare.
+func (h *ClaimInstantStaticDepositFlowHandler) ValidateDecisionAgainstPrepare(prepareOp proto.Message, decisionOp proto.Message) error {
+	prepare, ok := prepareOp.(*pbinternal.ClaimInstantStaticDepositUtxoSwapPrepareRequest)
+	if !ok {
+		return fmt.Errorf("unexpected prepare op type %T for claim instant static deposit", prepareOp)
+	}
+	prepared := prepare.GetOriginalRequest()
+	var transferID string
+	switch d := decisionOp.(type) {
+	case *pbinternal.ClaimInstantStaticDepositUtxoSwapCommitRequest:
+		transferID = d.GetTransferId()
+		if (d.GetTransferCommit() != nil) != (prepared.GetTransfer() != nil) {
+			return fmt.Errorf("commit carries a secondary transfer commit: %t, prepared a secondary transfer: %t", d.GetTransferCommit() != nil, prepared.GetTransfer() != nil)
+		}
+		if d.GetTransferCommit() != nil && !sameTransferID(d.GetTransferCommit().GetTransferId(), prepared.GetTransfer().GetTransferId()) {
+			return fmt.Errorf("commit secondary transfer id %s does not match the prepared secondary transfer id %s", d.GetTransferCommit().GetTransferId(), prepared.GetTransfer().GetTransferId())
+		}
+	case *pbinternal.ClaimInstantStaticDepositUtxoSwapRollbackRequest:
+		transferID = d.GetTransferId()
+	case *pbinternal.ClaimInstantStaticDepositUtxoSwapPrepareRequest:
+		// The reconciler's presumed-abort path echoes the prepare op itself.
+		transferID = d.GetOriginalRequest().GetTransferId()
+	default:
+		return fmt.Errorf("unexpected decision op type %T for claim instant static deposit", decisionOp)
+	}
+	if !sameTransferID(transferID, prepared.GetTransferId()) {
+		return fmt.Errorf("decision transfer id %s does not match the prepared transfer id %s", transferID, prepared.GetTransferId())
+	}
+	return nil
+}
 
 func NewClaimInstantStaticDepositFlowHandler(config *so.Config) *ClaimInstantStaticDepositFlowHandler {
 	return &ClaimInstantStaticDepositFlowHandler{
@@ -323,6 +362,16 @@ func (h *ClaimInstantStaticDepositFlowHandler) Commit(ctx context.Context, op pr
 	swap, err := loadInstantSwapForClaim(ctx, db, transferID, false /* forUpdate */, st.UtxoSwapStatusCreated, st.UtxoSwapStatusCompleted)
 	if err != nil {
 		return err
+	}
+	// Prepare links the confirmed UTXO to the reservation; a reservation without
+	// that edge was never validated by a claim prepare on this SO, so completing
+	// it would credit a deposit this SO cannot spend.
+	hasUtxo, err := swap.QueryUtxo().Exist(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to check the utxo of swap %s: %w", swap.ID, err)
+	}
+	if !hasUtxo {
+		return sparkerrors.FailedPreconditionInvalidState(fmt.Errorf("swap %s has no utxo linked by a claim prepare", swap.ID))
 	}
 	if req.GetTransferCommit() != nil {
 		// Bind the coordinator-authored transfer commit to this SO's own pinned
