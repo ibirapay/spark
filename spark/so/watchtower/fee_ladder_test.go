@@ -3,6 +3,7 @@ package watchtower
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -98,10 +99,45 @@ func TestTryBroadcastRefundLadder(t *testing.T) {
 	t.Run("timelocked refund is left alone", func(t *testing.T) {
 		n := newLadderNode(t)
 		client := &mockBitcoinClient{rawResponses: map[string]json.RawMessage{"submitpackage": success}}
-		sent, err := tryBroadcastRefundLadder(ctx, client, n.node, 1999, btcnetwork.Regtest)
+		sent, err := tryBroadcastRefundLadder(ctx, client, n.node, 1998, btcnetwork.Regtest)
 		require.NoError(t, err)
 		require.False(t, sent)
 		require.Empty(t, client.rawRequests)
+	})
+
+	// Confirmed at 100 with a 1900-block timelock, the refund fits block 2000,
+	// so the mempool takes it at tip 1999; a previous owner's refund (100 more
+	// blocks) at tip 2099, by which the top rung must already be out.
+	t.Run("refund goes out as soon as the mempool admits it", func(t *testing.T) {
+		n := newLadderNode(t)
+		client := &mockBitcoinClient{rawResponses: map[string]json.RawMessage{"submitpackage": success}}
+		sent, err := tryBroadcastRefundLadder(ctx, client, n.node, 1999, btcnetwork.Regtest)
+		require.NoError(t, err)
+		require.True(t, sent)
+		require.Equal(t, []string{hex.EncodeToString(n.node.RawRefundTx), hex.EncodeToString(n.rungs[0])}, submittedPackage(t, client))
+	})
+
+	for _, tc := range []struct {
+		tip  int64
+		rung int
+	}{{2097, 1}, {2098, 2}, {2099, 2}} {
+		t.Run(fmt.Sprintf("tip %d climbs to rung %d before a stale refund is admissible", tc.tip, tc.rung), func(t *testing.T) {
+			n := newLadderNode(t)
+			client := &mockBitcoinClient{rawResponses: map[string]json.RawMessage{"submitpackage": success}}
+			sent, err := tryBroadcastRefundLadder(ctx, client, n.node, tc.tip, btcnetwork.Regtest)
+			require.NoError(t, err)
+			require.True(t, sent)
+			require.Equal(t, hex.EncodeToString(n.rungs[tc.rung]), submittedPackage(t, client)[1])
+		})
+	}
+
+	t.Run("unconfirmed node tx is left alone", func(t *testing.T) {
+		n := newLadderNode(t)
+		n.node.NodeConfirmationHeight = 0
+		client := &mockBitcoinClient{rawResponses: map[string]json.RawMessage{"submitpackage": success}}
+		sent, err := tryBroadcastRefundLadder(ctx, client, n.node, 5000, btcnetwork.Regtest)
+		require.NoError(t, err)
+		require.False(t, sent)
 	})
 
 	t.Run("expired refund goes out with the rung meeting the estimate", func(t *testing.T) {

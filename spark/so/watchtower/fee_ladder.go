@@ -45,7 +45,12 @@ func tryBroadcastRefundLadder(ctx context.Context, btcClient bitcoinClient, node
 	if sequence&(wire.SequenceLockTimeDisabled|wire.SequenceLockTimeIsSeconds) != 0 {
 		return false, fmt.Errorf("refund tx for node %s has no block-based timelock", node.ID)
 	}
-	eligibleAt := uint64(sequence&wire.SequenceLockTimeMask) + node.NodeConfirmationHeight
+	if node.NodeConfirmationHeight == 0 {
+		return false, nil
+	}
+	// A relative timelock of n blocks admits the refund into block h+n (h = the
+	// node tx's confirmation height), so the mempool takes it once the tip is h+n-1.
+	eligibleAt := uint64(sequence&wire.SequenceLockTimeMask) + node.NodeConfirmationHeight - 1
 	if eligibleAt > uint64(blockHeight) {
 		return false, nil
 	}
@@ -82,7 +87,9 @@ func tryBroadcastRefundLadder(ctx context.Context, btcClient bitcoinClient, node
 		logging.GetLoggerFromContext(ctx).Sugar().Infof("No fee estimate for refund ladder of node %s: %v", node.ID, err)
 		targetRate = 0
 	}
-	rung := pickRefundRung(feeRates, targetRate, uint64(blockHeight)-eligibleAt, refundLadderDefenseWindow)
+	// The previous owner's refund reaches the mempool refundLadderDefenseWindow
+	// blocks after ours, so the top rung must be out one block before that.
+	rung := pickRefundRung(feeRates, targetRate, uint64(blockHeight)-eligibleAt, refundLadderDefenseWindow-1)
 
 	err = submitPackage(btcClient, [][]byte{node.RawRefundTx, rungs[rung]})
 	if refundTxBroadcastCounter != nil {
